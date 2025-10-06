@@ -1,8 +1,12 @@
 [bits 16]
-[org 0x0000]
 
+global Kernel
+extern KernelMain
+
+; -------------------- Kernel --------------------
+Kernel:
 ; -------------------- Initializations --------------------
-SegmentInitialization:
+.segmentInitialization:
   cli ; Disable maskable interrupts so that stack initializes without interruption. Although, this is not needed for such a small project but this is considered a good practice.
 
   ; -------------------- Initialize Data Segment (DS) --------------------
@@ -25,19 +29,9 @@ SegmentInitialization:
   
   sti ; Re-enable maskable interrupts.
 
-; -------------------- Kernel --------------------
-Kernel:
-  call ClearScreen
-
-  mov si, welcomeMessage
-  call WriteStringNL
-
-  call Shell
-
-  jmp Hang
+.jumpToKernel:
+  call KernelMain
+  jmp $
 
 ; -------------------- Externals --------------------
-%include "utilities.asm"
-%include "shell.asm"
-%include "io.asm"
 

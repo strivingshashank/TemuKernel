@@ -1,13 +1,26 @@
-; ======================================================
-; ----------------------- MACROS -----------------------
-; ======================================================
-CARRIAGE_RETURN equ 0x0D
-BACKSPACE equ 0x08
-BUFFER_SIZE equ 80 
+[bits 16]
 
-; ======================================================
+; ----------------------- MACROS -----------------------
+CARRIAGE_RETURN equ 0x0D
+BACKSPACE equ 0x08 
+
+; -------------------- ClearScreen ---------------------
+; Before Call:
+;   - NOTHING
+; After Call:
+;   - Cleared screen with cursor at top
+ClearScreen:
+  push ax
+
+  mov ah, 0x00 ; Set video mode function.
+  mov al, 0x03 ; Sets 80*25 2-color mode.
+  int 0x10 ; Video interrupt from BIOS.
+
+.return:
+  pop ax
+  ret
+
 ; -------------------- ReadLine ------------------------
-; ======================================================
 ; Before Call:
 ;   - NOTHING
 ; After Call:
@@ -59,7 +72,6 @@ ReadLine:
   jmp .return ; Return to caller.
 
 .readBackspace:
-  ; INCOMPLETE
   cmp di, lineBuffer ; Is DI pointing at the beginning of lineBuffer?
   je .readLoop ; If yes, don't bother, move ahead with reading.
   
@@ -73,9 +85,79 @@ ReadLine:
 
 .extenedCodeMessage: db "Extended Code: ", 0
 
-; ======================================================
+; ----------------- ReadLineVisual -----------------
+; Before Call:
+;   - NOTHING
+; After Call:
+;   - Read character from keyboard buffer (blocking) and store in the lineBuffer also, write on the screen.
+ReadLineVisual:
+  push ax
+  push dx
+  push si
+  push di
+
+  mov di, lineBuffer ; Input buffer is ready to be written.
+
+.readLoop:
+  mov ah, 0x00 ; Function - Read character (Blocking)
+  int 0x16 ; BIOS Interrupt - Keyboard
+
+  cmp al, 0x00 ; Is Extened key code?
+  jne .readASCII
+
+  mov si, .extenedCodeMessage
+  call WriteString
+
+  mov dx, 0x00
+  mov dl, ah
+  call WriteHex
+  call WriteNewline
+
+  jmp .readLoop
+  
+.return:
+  pop di
+  pop si
+  pop dx
+  pop ax
+  ret
+
+.readASCII:
+  cmp al, CARRIAGE_RETURN ; Carriage Return?
+  je .readCarriageReturn
+
+  cmp al, BACKSPACE ; Backspace?
+  je .readBackspace
+  
+  jmp .readCharacter
+
+.readCarriageReturn:
+  mov byte [di], 0x00 ; Add a NULL character after Carriage Return.
+  mov di, lineBuffer ; Reset DI for next input.
+  call WriteNewline
+  jmp .return ; Return to caller.
+
+.readBackspace:
+  cmp di, lineBuffer ; Is DI pointing at the beginning of lineBuffer?
+  je .readLoop ; If yes, don't bother, move ahead with reading.
+  
+  dec di
+  mov byte [di], 0x00
+
+  call WriteCharacter
+  call WriteSpace
+  call WriteCharacter
+  
+  jmp .readLoop
+
+.readCharacter:
+  stosb
+  call WriteCharacter
+  jmp .readLoop
+
+.extenedCodeMessage: db "Extended Code: ", 0
+
 ; ----------------- WriteCharacter ---------------------
-; ======================================================
 ; Before Call:
 ;   - AL = Character to be printed
 ; After Call:
@@ -85,12 +167,12 @@ WriteCharacter:
 
   mov ah, 0x0e ; 0x0e value in AH indicates "Write a character".
   int 0x10 ; This calls the Video function interrupt from the BIOS.
+
+.return:
   pop ax
   ret
 
-; ======================================================
 ; -------------------- WriteSpace ----------------------
-; ======================================================
 ; Before Call:
 ;   - NOTHING
 ; After Call:
@@ -104,9 +186,7 @@ WriteSpace:
   pop ax
   ret
 
-; ======================================================
 ; -------------------- WriteString ---------------------
-; ======================================================
 ; Before Call:
 ;   - Set SourceIndex (SI) to point the string to be printed.
 ; After Call:
@@ -143,9 +223,7 @@ WriteString:
   pop ax
   ret
 
-; ======================================================
 ; ------------------- WriteStringNL --------------------
-; ======================================================
 ; Before Call:
 ;   - Set SourceIndex (SI) to point the string to be printed.
 ; After Call:
@@ -157,9 +235,7 @@ WriteStringNL:
 .return:
   ret
 
-; ======================================================
 ; -------------------- WriteHex ------------------------
-; ======================================================
 ; Before Call:
 ;   - Set DX as the hex number to be printed as string 
 ; After Call:
@@ -168,7 +244,7 @@ WriteHex:
   push ax
   push bx
 
-  mov bx, hexMap ; BX now stores the memory address of hexMap at [0].
+  mov bx, .hexMap ; BX now stores the memory address of hexMap at [0].
 
   mov al, '0'
   call WriteCharacter ; Purely for decoration of "0x" before the HEX string.
@@ -208,28 +284,10 @@ WriteHex:
 
   ret
 
-; ======================================================
-; -------------------- ClearScreen ---------------------
-; ======================================================
-; Before Call:
-;   - NOTHING
-; After Call:
-;   - Cleared screen with cursor at top
-ClearScreen:
-  push ax
+.hexMap: db "0123456789abcdef" ; This maps the hex values of their respective character in the memory.
 
-  mov ah, 0x00 ; Set video mode function.
-  mov al, 0x03 ; Sets 80*25 2-color mode.
 
-  int 0x10 ; Video interrupt from BIOS.
-
-.return:
-  pop ax
-  ret
-
-; ======================================================
 ; ------------------- WriteNewline ---------------------
-; ======================================================
 ; Before Call:
 ;   - NOTHING
 ; After Call:
@@ -247,14 +305,27 @@ WriteNewline:
   pop ax
   ret
 
-; ======================================================
 ; ------------------- WriteLine ------------------------
-; ======================================================
 ; Before Call:
 ;   - NOTHING
 ; After Call:
 ;   - String in lineBuffer is written on screen.
 WriteLine:
+  push si
+
+  mov si, lineBuffer
+  call WriteString
+  
+.return:
+  pop si
+  ret
+
+; ------------------- WriteLineNL ------------------------
+; Before Call:
+;   - NOTHING
+; After Call:
+;   - String in lineBuffer is written on screen.
+WriteLineNL:
   push si
 
   mov si, lineBuffer
@@ -264,13 +335,6 @@ WriteLine:
   pop si
   ret
 
-; ======================================================
 ; -------------------- Externals -----------------------
-; ======================================================
 %include "labels.asm"
 
-; ======================================================
-; ------------------- DYNAMIC LABELS -------------------
-; ======================================================
-section .bss
-lineBuffer: resb BUFFER_SIZE

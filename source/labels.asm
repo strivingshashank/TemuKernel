@@ -1,7 +1,17 @@
 [bits 16]
 
-; bootingMessage: db "Booting into kernel...", 0
+BUFFER_SIZE equ 80
+
+section .data 
+; ------------------ SECTION .DATA -------------------
+bootingMessage: db "Booting into kernel...", 0
 welcomeMessage: db "Welcome to TemuOS!", 0
 exitMessage: db "TemuOS is da best.", 0
 
-hexMap: db "0123456789abcdef" ; This maps the hex values of their respective character in the memory.
+testString: db "shashank", 0
+notEqualMessage: db "Strings are not equal.", 0
+
+section .bss
+; ------------------ SECTION .BSS -------------------
+lineBuffer: resb BUFFER_SIZE
+
