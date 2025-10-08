@@ -1,38 +1,46 @@
 [bits 16]
 [org 0x7c00]
 
+TEMU_LOAD_SEGMENT equ 0x07e0 ; Converts to -> 0x7e00 (physical address)
+TEMU_SECTOR_COUNT equ 0x40 ; 64 Sectors, for safety. (Needs fixing...)
+
+%macro READ_DISK 0
+  ; BIOS Interrupt
+  mov ah, 0x02   ; BIOS read disk
+  int 0x13
+%endmacro
+
 Bootloader:
   ; To be 0 for correct offsetting from the origin.
   xor ax, ax ; Zeroes the AX. Equivalent to "mov ax, 0".
   mov ax, cs ; This and the following instruction equals DS to CS because the labels are relative to CS (b/c we used them as part of the source "code" and not data segment seperately.)
   mov ds, ax
   mov [currentBootDrive], dl ; BIOS returns the current boot drive number in DL after startup.
-  jmp ReadKernel
 
-ReadKernel:
+ReadTemu:
   ; ES Setup
-  mov ax, 0x1000
+  mov ax, TEMU_LOAD_SEGMENT
   mov es, ax ; ES initialized at 0x1000 for the kernel to be loaded.
   mov bx, 0x00  ; 0 offset from ES
 
   ; Drive Setup
-  mov al, 0x03   ; 3 sectors
   mov dl, [currentBootDrive] ; Read from drive number.
-  mov al, 0x03 ; Number of sectors to read.
+  mov al, TEMU_SECTOR_COUNT ; Number of sectors to read.
   mov ch, 0x00 ; Select cylinder number (Base 0; 1st cylinder).         'C'
   mov dh, 0x00 ; Use the head on the opposite side (Base 0; 1st head).  'H'
-  mov cl, 0x02 ; Select sector number (Base 1; 4th sector).             'S'
+  mov cl, 0x02 ; Select sector number (Base 1; 2nd sector).             'S'
   
-  ; BIOS Interrupt
-  mov ah, 0x02   ; BIOS read disk
-  int 0x13
+  READ_DISK
 
   ; Error handling
   jc .fail
-  cmp al, 0x03
+
+  cmp al, TEMU_SECTOR_COUNT
   jne .fail
   
-  jmp 0x1000:0000 ; Make the actual jump to the kernel.
+  ; jmp 0x1000:0000 ; Make the actual jump to the kernel.
+  jmp TEMU_LOAD_SEGMENT:0x0000 ; Make the actual jump to the kernel.
+
 
 .fail:
   mov al, '!'

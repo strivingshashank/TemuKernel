@@ -1,10 +1,32 @@
-[bits 16]
+%ifndef UTILITIES_INCLUDED
+%define UTILITIES_INCLUDED 1
 
-Hang:
+; ======================================== Wrappers ========================================
+%macro COMPARE_STRING_BUFFERS 2
+  push si
+  push di
+
+  mov si, %1
+  mov di, %2
+  call _compareStrings
+
+  pop di
+  pop si
+%endmacro
+
+%macro HANG 0
   jmp $
+%endmacro
 
-CompareStrings:
-  ; push ax
+; ======================================== Routines ========================================
+; ---------------------------------------- _compareStrings ------------------------------------------
+; Before Call:
+;   - SI = &string1
+;   - DI = &string2
+; After Call:
+;   - If strings are equal -> AX = 0x01
+;   - If strings are not equal -> AX = 0x00
+_compareStrings:
   push bx
 
 .compareLoop:
@@ -22,16 +44,16 @@ CompareStrings:
 
   jmp .compareLoop
 
-.return:
+.done:
   pop bx
   ret  
 
 .equal:
   mov ax, 0x01 ; Implies that the strings were equal.
-  jmp .return
+  jmp .done
 
 .notEqual:
-  ; mov si, notEqualMessage
-  ; call Wricmpring
   mov ax, 0x00 ; Implies that the strings were not equal.
-  jmp .return
+  jmp .done
+
+%endif

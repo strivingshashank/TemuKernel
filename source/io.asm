@@ -1,54 +1,113 @@
-[bits 16]
+%ifndef IO_INCLUDED
+%define IO_INCLUDED 1
 
-; ----------------------- MACROS -----------------------
-CARRIAGE_RETURN equ 0x0D
-BACKSPACE equ 0x08 
+%include "constants.asm"
 
-; -------------------- ClearScreen ---------------------
+; ======================================== Wrappers ========================================
+%macro CLEAR_SCREEN 0
+  call _clearScreen
+%endmacro
+
+%macro SCAN_CHARACTER 0
+  call _scanCharacter
+%endmacro
+
+; IN: Destination string buffer
+%macro SCAN_STRING_BUFFER 1 ; Needs handling 
+  push di
+
+  %ifidni %1, di
+    call _scanStringBuffer
+  %else
+    mov di, %1
+    call _scanStringBuffer
+  %endif
+
+  pop di
+%endmacro
+
+; IN: Character / Register (with character)
+%macro PRINT_CHARACTER 1
+  %ifidni %1, al ; Check if the passes argument is AL (case-insensitive).
+    call _printCharacter
+  %else
+    push ax
+    mov al, %1
+    call _printCharacter
+    pop ax
+  %endif
+%endmacro
+
+; IN: Source string buffer
+%macro PRINT_STRING_BUFFER 1
+  push si
+
+  %ifidni %1, si
+    call _printStringBuffer
+  %else
+    mov si, %1
+    call _printStringBuffer
+  %endif
+  
+  pop si
+%endmacro
+
+%macro PRINT_NEWLINE 0
+  call _printNewline
+%endmacro
+
+; IN: Hex value / Register (with hex value)
+%macro PRINT_HEX 1
+  push dx
+  mov dx, 0x00 ; Helps if the input register is 8-bit
+  mov dx, %1
+  call _printHex
+  pop dx
+%endmacro
+
+; ======================================== Routines ========================================
+; ---------------------------------------- _clearScreen ------------------------------------------
 ; Before Call:
 ;   - NOTHING
 ; After Call:
 ;   - Cleared screen with cursor at top
-ClearScreen:
+_clearScreen:
   push ax
-
   mov ah, 0x00 ; Set video mode function.
   mov al, 0x03 ; Sets 80*25 2-color mode.
   int 0x10 ; Video interrupt from BIOS.
-
-.return:
   pop ax
   ret
 
-; -------------------- ReadLine ------------------------
+_scanCharacter:
+  ; AL = Character read
+  mov ah, 0x00 ; Function - Read character (Blocking)
+  int 0x16 ; BIOS Interrupt - Keyboard
+  ret
+
+; ---------------------------------------- _scanStringBuffer ----------------------------------------
 ; Before Call:
 ;   - NOTHING
 ; After Call:
-;   - Read character from keyboard buffer (blocking) and store in the lineBuffer.
-ReadLine:
+;   - Read character from keyboard buffer (blocking) and store in the buffer_line also, write on the screen.
+_scanStringBuffer:
   push ax
   push dx
   push si
   push di
 
-  mov di, lineBuffer ; Input buffer is ready to be written.
-
-.readLoop:
-  mov ah, 0x00 ; Function - Read character (Blocking)
-  int 0x16 ; BIOS Interrupt - Keyboard
+.scanLoop:
+  SCAN_CHARACTER ; Wait until a character is entered.
 
   cmp al, 0x00 ; Is Extened key code?
-  jne .readASCII
+  jne .scanASCII
 
-  mov si, .extenedCodeMessage
-  call WriteString
+  PRINT_STRING_BUFFER .extenedCodeMessage
 
-  mov dx, 0x00
-  mov dl, ah
-  call WriteHex
-  call WriteNewline
+  PRINT_HEX ax
+  PRINT_NEWLINE
 
-  jmp .readLoop
+  jmp .scanLoop
   
 .return:
   pop di
@@ -57,141 +116,58 @@ ReadLine:
   pop ax
   ret
 
-.readASCII:
+.scanASCII:
   cmp al, CARRIAGE_RETURN ; Carriage Return?
-  je .readCarriageReturn
+  je .scanCarriageReturn
 
   cmp al, BACKSPACE ; Backspace?
-  je .readBackspace
+  je .scanBackspace
   
-  jmp .readCharacter
+  jmp .scanCharacter
 
-.readCarriageReturn:
+.scanCarriageReturn:
   mov byte [di], 0x00 ; Add a NULL character after Carriage Return.
-  mov di, lineBuffer ; Reset DI for next input.
+  mov di, buffer_line ; Reset DI for next input.
+  PRINT_NEWLINE
   jmp .return ; Return to caller.
 
-.readBackspace:
-  cmp di, lineBuffer ; Is DI pointing at the beginning of lineBuffer?
-  je .readLoop ; If yes, don't bother, move ahead with reading.
-  
-  dec di
-  mov byte [di], 0x00
-  jmp .readLoop
-
-.readCharacter:
-  stosb
-  jmp .readLoop
-
-.extenedCodeMessage: db "Extended Code: ", 0
-
-; ----------------- ReadLineVisual -----------------
-; Before Call:
-;   - NOTHING
-; After Call:
-;   - Read character from keyboard buffer (blocking) and store in the lineBuffer also, write on the screen.
-ReadLineVisual:
-  push ax
-  push dx
-  push si
-  push di
-
-  mov di, lineBuffer ; Input buffer is ready to be written.
-
-.readLoop:
-  mov ah, 0x00 ; Function - Read character (Blocking)
-  int 0x16 ; BIOS Interrupt - Keyboard
-
-  cmp al, 0x00 ; Is Extened key code?
-  jne .readASCII
-
-  mov si, .extenedCodeMessage
-  call WriteString
-
-  mov dx, 0x00
-  mov dl, ah
-  call WriteHex
-  call WriteNewline
-
-  jmp .readLoop
-  
-.return:
-  pop di
-  pop si
-  pop dx
-  pop ax
-  ret
-
-.readASCII:
-  cmp al, CARRIAGE_RETURN ; Carriage Return?
-  je .readCarriageReturn
-
-  cmp al, BACKSPACE ; Backspace?
-  je .readBackspace
-  
-  jmp .readCharacter
-
-.readCarriageReturn:
-  mov byte [di], 0x00 ; Add a NULL character after Carriage Return.
-  mov di, lineBuffer ; Reset DI for next input.
-  call WriteNewline
-  jmp .return ; Return to caller.
-
-.readBackspace:
-  cmp di, lineBuffer ; Is DI pointing at the beginning of lineBuffer?
-  je .readLoop ; If yes, don't bother, move ahead with reading.
+.scanBackspace:
+  cmp di, buffer_line ; Is DI pointing at the beginning of buffer_line?
+  je .scanLoop ; If yes, don't bother, move ahead with reading.
   
   dec di
   mov byte [di], 0x00
 
-  call WriteCharacter
-  call WriteSpace
-  call WriteCharacter
+  PRINT_CHARACTER BACKSPACE
+  PRINT_CHARACTER ' '
+  PRINT_CHARACTER BACKSPACE
   
-  jmp .readLoop
+  jmp .scanLoop
 
-.readCharacter:
+.scanCharacter:
   stosb
-  call WriteCharacter
-  jmp .readLoop
+  PRINT_CHARACTER al
+  jmp .scanLoop
 
 .extenedCodeMessage: db "Extended Code: ", 0
 
-; ----------------- WriteCharacter ---------------------
+; ---------------------------------------- _printCharacter ----------------------------------------
 ; Before Call:
 ;   - AL = Character to be printed
 ; After Call:
 ;   - Character printed on screen
-WriteCharacter:
-  push ax
-
+_printCharacter:
+  ; push ax
   mov ah, 0x0e ; 0x0e value in AH indicates "Write a character".
   int 0x10 ; This calls the Video function interrupt from the BIOS.
-
-.return:
-  pop ax
   ret
 
-; -------------------- WriteSpace ----------------------
-; Before Call:
-;   - NOTHING
-; After Call:
-;   - Space (character) printed on screen
-WriteSpace:
-  push ax
-
-  mov al, ' '
-  call WriteCharacter
-
-  pop ax
-  ret
-
-; -------------------- WriteString ---------------------
+; ---------------------------------------- _printStringBuffer ----------------------------------------
 ; Before Call:
 ;   - Set SourceIndex (SI) to point the string to be printed.
 ; After Call:
 ;   - String printed on screen
-WriteString:
+_printStringBuffer:
   push ax
 
 .writeLoop:
@@ -200,56 +176,43 @@ WriteString:
   je .return ; Return if string ended.
 
   cmp al, CARRIAGE_RETURN ; Carriage Return?
-  je .writeCarriageReturn
+  je .printCarriageReturn
 
   cmp al, BACKSPACE ; Backspace?
-  je .writeBackspace
+  je .printBackspace
 
-  jmp .writeCharacter
+  jmp .printCharacter
 
-.writeCarriageReturn:
-  call WriteNewline
+.printCarriageReturn:
+  PRINT_NEWLINE
   jmp .return
 
-.writeBackspace:
+.printBackspace:
   ; Write backspace logic here.
   jmp .writeLoop
 
-.writeCharacter:
-  call WriteCharacter
+.printCharacter:
+  PRINT_CHARACTER al
   jmp .writeLoop ; Loop until end of string is reached.
 
 .return:
   pop ax
   ret
 
-; ------------------- WriteStringNL --------------------
-; Before Call:
-;   - Set SourceIndex (SI) to point the string to be printed.
-; After Call:
-;   - String printed on screen and move the carriage to next line.
-WriteStringNL:
-  call WriteString
-  call WriteNewline
-
-.return:
-  ret
-
-; -------------------- WriteHex ------------------------
+; ---------------------------------------- _printHex ------------------------------------------------
 ; Before Call:
 ;   - Set DX as the hex number to be printed as string 
 ; After Call:
 ;   - HEX as string literal printed on screen
-WriteHex:
+_printHex:
   push ax
   push bx
 
   mov bx, .hexMap ; BX now stores the memory address of hexMap at [0].
 
-  mov al, '0'
-  call WriteCharacter ; Purely for decoration of "0x" before the HEX string.
-  mov al, 'x'
-  call WriteCharacter
+  ; Purely for decoration of "0x" before the HEX string.
+  PRINT_CHARACTER '0'
+  PRINT_CHARACTER 'x'
 
   mov al, dh ; Extract DH from DX to AL.
   call .writeByte
@@ -270,7 +233,7 @@ WriteHex:
 
   mov al, ah
   xlat ; AL = [BX + AL]. Move ahead AH times from the address pointed by BX. This gives us the respective character pointed.
-  call WriteCharacter
+  PRINT_CHARACTER al
 
   pop ax
 
@@ -280,61 +243,20 @@ WriteHex:
 
   mov al, ah
   xlat ; AL = [BX + AL]. Move ahead AH times from the address pointed by BX. This gives us the respective character pointed.
-  call WriteCharacter
+  PRINT_CHARACTER al
 
   ret
 
 .hexMap: db "0123456789abcdef" ; This maps the hex values of their respective character in the memory.
 
-
-; ------------------- WriteNewline ---------------------
+; -------------------------------------- _printNewline --------------------------------------
 ; Before Call:
 ;   - NOTHING
 ; After Call:
 ;   - Newline printed on screen
-WriteNewline:
-  push ax
-
-  mov al, 0x0a ; ASCII - Line feed
-  call WriteCharacter
-
-  mov al, 0x0d ; ASCII - Carriage return
-  call WriteCharacter
-
-.return:
-  pop ax
+_printNewline:
+  PRINT_CHARACTER LINE_FEED
+  PRINT_CHARACTER CARRIAGE_RETURN
   ret
 
-; ------------------- WriteLine ------------------------
-; Before Call:
-;   - NOTHING
-; After Call:
-;   - String in lineBuffer is written on screen.
-WriteLine:
-  push si
-
-  mov si, lineBuffer
-  call WriteString
-  
-.return:
-  pop si
-  ret
-
-; ------------------- WriteLineNL ------------------------
-; Before Call:
-;   - NOTHING
-; After Call:
-;   - String in lineBuffer is written on screen.
-WriteLineNL:
-  push si
-
-  mov si, lineBuffer
-  call WriteStringNL
-  
-.return:
-  pop si
-  ret
-
-; -------------------- Externals -----------------------
-%include "labels.asm"
-
+%endif
