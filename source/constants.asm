@@ -4,8 +4,8 @@
 ; -------------------- Memory Constants --------------------
 MAX_SEGMENT_SIZE equ 0xffff
 CODE_DATA_SEGMENT equ 0x07e0
-EXTRA_SEGMENT equ 0x07e0
-; EXTRA_SEGMENT equ 0x17e0
+; EXTRA_SEGMENT equ 0x07e0
+EXTRA_SEGMENT equ CODE_DATA_SEGMENT
 HEAP_SEGMENT equ 0x27e0
 STACK_SEGMENT equ 0x37e0
 
