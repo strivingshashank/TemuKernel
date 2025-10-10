@@ -6,40 +6,47 @@
 %include "utilities.asm"
 
 Shell:
+; .readCommand
+; .processCommand
+; jmp .readCommand
+
 .readCommand:
-  PRINT_STRING_BUFFER .string_shellPrompt
+    PRINT_STRING_BUFFER .string_shellPrompt
+    SCAN_STRING_BUFFER buffer_line
+    ; Needs working here
 
-  SCAN_STRING_BUFFER buffer_line
+.processCommand:
+    ; Command: exit
+    COMPARE_STRING_BUFFERS buffer_line, .string_commandExit    
+    cmp ax, 0x01
+    je .command_exit
 
-  ; Needs working here
-  
-  COMPARE_STRING_BUFFERS buffer_line, .string_commandExit  
-  cmp ax, 0x01
-  je .exit
+    ; Command: clear
+    COMPARE_STRING_BUFFERS buffer_line, .string_commandClear
+    cmp ax, 0x01
+    je .command_clear
 
-  COMPARE_STRING_BUFFERS buffer_line, .string_commandClear
-  cmp ax, 0x01
-  je .clear
-
-  jmp .commandNotFound
+    ; Command: -
+    jmp .command_notFound
 
 .return:
-  ret
+    pop ax
+    ret
 
-.exit:
-  PRINT_STRING_BUFFER .string_messageExit
-  PRINT_NEWLINE
-  jmp .return
+.command_exit:
+    PRINT_STRING_BUFFER .string_messageExit
+    PRINT_NEWLINE
+    jmp .return
 
-.clear:
-  CLEAR_SCREEN
-  jmp .readCommand
+.command_clear:
+    CLEAR_SCREEN
+    jmp .readCommand
 
-.commandNotFound:
-  PRINT_STRING_BUFFER .string_messageCommandNotFound
-  PRINT_STRING_BUFFER buffer_line
-  PRINT_NEWLINE
-  jmp .readCommand
+.command_notFound:
+    PRINT_STRING_BUFFER .string_messageCommandNotFound
+    PRINT_STRING_BUFFER buffer_line
+    PRINT_NEWLINE
+    jmp .readCommand
 
 .string_shellPrompt: db "temu > ", 0
 .string_commandClear: db "clear", 0
